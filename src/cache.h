@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2017 Seantian
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * Permission is hereby granted, delete of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
@@ -32,24 +32,30 @@ namespace cache
 	{
 		template<class NK, class NV> struct Node
 		{
+			typedef Node* value_point;
 			NK key;
 			NV value;
-			Node *spre, *snext;
-			Node *gpre, *gnext;list
+			value_point spre, snext;
+			value_point gpre, gnext;
+			Node()
+			{
+				spre = snext = gpre = gnext = NULL;
+			}
 			Node(NK key, NV value):key(key), value(value)
 			{
 				spre = snext = gpre = gnext = NULL;
 			}
 		};
 
+		typedef Node<K, V> CNode;
 	public:
 		Cache(size_t capacity = 100000):_capacity(capacity)
 		{
-			_map = new std::map<K, Node<K, V>* >();	
-			_shead = new Node<K, V>();
-			_stail = new Node<K, V>();
-			_ghead = new Node<K, V>();
-			_gtail = new Node<K, V>();
+			_map = new std::map<K, CNode*>();	
+			_shead = new CNode();
+			_stail = new CNode();
+			_ghead = new CNode();
+			_gtail = new CNode();
 
 			_shead->snext = _stail;
 			_stail->spre = _shead;
@@ -70,18 +76,19 @@ namespace cache
 
 		void set(const K& key, const V& value)
 		{
-			std::map<K, Node<K, V>*>::iterator it = _map.find(key);			
+			typename std::map<K, CNode*>::iterator it = _map.find(key);			
 			if(it != _map.end())
 			{
-				Node<K, V>* tnode = it->second;
+				CNode* tnode = it->second;
 				tnode->value = value;
 				move_to_shead(tnode);
 				move_to_ghead(tnode);
 			}
 			else
 			{
+				
 				//如果数量超过最大容量
-				Node<K, V>* tnode = new Node(key, value);
+				CNode* tnode = new CNode(key, value);
 				add_shead(tnode);
 				add_ghead(tnode);
 			}
@@ -89,7 +96,7 @@ namespace cache
 
 		bool get(const K& key, V& value)
 		{
-			std::map<K, Node<K, V>*>::iterator it = _map.find(key);
+			typename std::map<K, CNode*>::iterator it = _map.find(key);
 			if(it == _map.end()) return false;
 			value = it->second->value;
 			return true;
@@ -97,12 +104,12 @@ namespace cache
 
 		void erase(const K& key)
 		{
-			std::map<K, Node<K, V>*>::iterator it = _map.find(key);
+			typename std::map<K, CNode*>::iterator it = _map.find(key);
 			if(it != _map.end())
 			{
 				remove_slist(it->second);
 				remove_glist(it->second);
-				free(it->second);
+				delete(it->second);
 				_map.erase(it);
 
 			}
@@ -110,13 +117,13 @@ namespace cache
 
 		void clear()
 		{
-			Node<K, V> *tnode = _ghead->gnext;
-			Node<K, V> *tnnode;
+			CNode *tnode = _ghead->gnext;
+			CNode *tnnode;
 			while(tnode != _gtail)
 			{
 				tnnode = tnode;
 				tnode = tnode->gnext;
-				free(tnnode);
+				delete(tnnode);
 			}
 			_map.clear();
 			_shead->snext = _stail;
@@ -129,78 +136,78 @@ namespace cache
 
 		~Cache()
 		{
-			Node<K, V> *tnode = _ghead->gnext;
-			Node<K, V> *tnnode;
+			CNode *tnode = _ghead->gnext;
+			CNode *tnnode;
 			while(tnode != _gtail)
 			{
 				tnnode = tnode;
 				tnode = tnode->gnext;
-				free(tnnode);
+				delete(tnnode);
 			}
-			free(_map);
-			free(_ghead);
-			free(_gtail);
-			free(_shead);
-			free(_stail);
+			delete(_map);
+			delete(_ghead);
+			delete(_gtail);
+			delete(_shead);
+			delete(_stail);
 		}
 
 	private:
-		inline typename std::map<K, Node<K, V>*>::iterator find(const K& key)
+		inline typename std::map<K, CNode*>::iterator find(const K& key)
 		{
 			return _map->find(key);
 		}
-		inline void move_to_shead(Node<K, V>* cur)
+		inline void move_to_shead(CNode* cur)
 		{
-			if(cur == NULL || cur == shead->snext) return;
+			if(cur == NULL || cur == _shead->snext) return;
 			cur->spre->snext = cur->snext;
 			cur->snext->spre = cur->spre;
-			cur->snext = shead->snext;
-			shead->snext->spre = cur;
-			shead->snext = cur;
-			cur->spre = shead;
+			cur->snext = _shead->snext;
+			_shead->snext->spre = cur;
+			_shead->snext = cur;
+			cur->spre = _shead;
 		}
-		inline void add_shead(Node<K, V>* cur)
+		inline void add_shead(CNode* cur)
 		{
 			if(cur == NULL) return;
-			cur->snext = shead->snext;
-			shead->snext->spre = cur;
-			shead->snext = cur;
-			cur->spre = head;	
+			cur->snext = _shead->snext;
+			_shead->snext->spre = cur;
+			_shead->snext = cur;
+			cur->spre = _shead;	
 		}
-		inline void remove_slist(Node<K, V>* cur)
+		inline void remove_slist(CNode* cur)
 		{
 			if(cur == NULL) return;
 			cur->spre->snext = cur->snext;
 			cur->snext->spre = cur->spre;	
 		}
-		inline void move_to_ghead(Node<K, V>* cur)
+		inline void move_to_ghead(CNode* cur)
 		{
-			if(cur == NULL || cur == ghead->gnext) return;
+			if(cur == NULL || cur ==_ghead->gnext) return;
 			cur->gpre->gnext = cur->gnext;
 			cur->gnext->gpre = cur->gpre;
-			cur->gnext = ghead->gnext;
-			ghead->gnext->gpre = cur;
-			ghead->gnext = cur;
-			cur->gpre = ghead;
+			cur->gnext =_ghead->gnext;
+			_ghead->gnext->gpre = cur;
+			_ghead->gnext = cur;
+			cur->gpre = _ghead;
 		}
-		inline void add_ghead(Node<K, V>* cur)
+		inline void add_ghead(CNode* cur)
 		{
 			if(cur == NULL) return;
-			cur->gnext = ghead->gnext;
-			ghead->gnext->gpre = cur;
-			ghead->gnext = cur;
-			cur->gpre = ghead;
+			cur->gnext =_ghead->gnext;
+			_ghead->gnext->gpre = cur;
+			_ghead->gnext = cur;
+			cur->gpre = _ghead;
 		}
-		inline void remove_glist(Node<K, V>* cur)
+		inline void remove_glist(CNode* cur)
 		{
 			if(cur == NULL) return;
 			cur->gpre->gnext = cur->gnext;
 			cur->gnext->gpre = cur->gpre;	
 		}
 
-		std::map<K, Node<K, V>* > *_map;
-		Node<K, V> *_ghead, *_gtail;//set list
-		Node<K, V> *_shead, *_stail;//get list
+		std::map<K, CNode*> *_map;
+		CNode *_ghead, *_gtail;//set list
+		CNode *_shead, *_stail;//get list
 		size_t _capacity;
 	};
 
