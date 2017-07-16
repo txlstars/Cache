@@ -30,6 +30,12 @@ namespace cache
 {
 	template<class K, class V> class Cache
 	{
+        enum CacheRetCode
+        {
+            CacheRetCode_Succ 0,//操作成功
+            CacheRetCode_Full -1,//提前告知Cache已满
+        };
+
 		template<class NK, class NV> struct Node
 		{
 			typedef Node* value_point;
@@ -37,11 +43,12 @@ namespace cache
 			NV value;
 			value_point spre, snext;
 			value_point gpre, gnext;
+            bool dirty;
 			Node()
 			{
 				spre = snext = gpre = gnext = NULL;
 			}
-			Node(NK key, NV value):key(key), value(value)
+			Node(NK key, NV value, bool dirty):key(key), value(value), dirty(dirty)
 			{
 				spre = snext = gpre = gnext = NULL;
 			}
@@ -74,24 +81,27 @@ namespace cache
 			return _map->empty();
 		}
 
-		void set(const K& key, const V& value)
+		CacheRetCode set(const K& key, const V& value, bool dirty)
 		{
 			typename std::map<K, CNode*>::iterator it = _map.find(key);			
 			if(it != _map.end())
 			{
 				CNode* tnode = it->second;
 				tnode->value = value;
+                tnode->dirty = dirty;
 				move_to_shead(tnode);
 				move_to_ghead(tnode);
 			}
 			else
 			{
-				
+			    if(_map.size() >= _capacity - 1) return CacheRetCode_Full;
 				//如果数量超过最大容量
-				CNode* tnode = new CNode(key, value);
+				CNode* tnode = new CNode(key, value, dirty);
 				add_shead(tnode);
 				add_ghead(tnode);
+                _map.insert(std::map<K, CNode*>(key, tnode);
 			}
+            return CacheRetCode_Succ;
 		}
 
 		bool get(const K& key, V& value)
@@ -99,6 +109,7 @@ namespace cache
 			typename std::map<K, CNode*>::iterator it = _map.find(key);
 			if(it == _map.end()) return false;
 			value = it->second->value;
+            move_to_ghead(it->second);
 			return true;
 		}
 
@@ -115,7 +126,29 @@ namespace cache
 			}
 		}
 
-		void clear()
+        size_t clear(size_t cnt = 0)
+        {
+            if(cnt == 0) cnt = _capacity / 10; //默认清除总容量的10%;
+            CNode *tnode = _gtail->gpre;
+            size_t num = 0;
+            while(cnt > 0 && tnode != _ghead)
+            {
+                _map.erase(tnode->key);
+                remove_slist(tnode);
+                tnode = tonde->gpre;
+                if(tnode->gnext->dirty)
+                {
+                    //脏数据回写到数据库中
+                }
+                delete(tnode->gnext);
+                ++num;
+            }
+            tnode->gnext = _gtail;
+            _gtail->gpre = tnode;
+            return num;
+        }
+
+		void clearall()
 		{
 			CNode *tnode = _ghead->gnext;
 			CNode *tnnode;
