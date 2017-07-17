@@ -30,6 +30,7 @@
 
 #ifndef _OR_CACHE_H_
 #define _OR_CACHE_H_
+#include <iostream>
 #include <map>
 #include <cstddef>
 namespace orcache
@@ -38,9 +39,10 @@ namespace orcache
 	{
         enum ORCacheRetCode
         {
-            ORCacheRetCode_Succ 0,//操作成功
-            ORCacheRetCode_Full -1,//提前告知Cache已满
-            ORCacheRetCode_Exit -2,//set操作时key已经存在
+            ORCacheRetCode_Succ		= 0,//操作成功
+            ORCacheRetCode_Full		= -1,//提前告知Cache已满
+            ORCacheRetCode_Exit		= -2,//set操作时key已经存在
+			ORCacheRetCode_Non_Exit	= -3,//get操作时key不存在
         };
 
 		template<class NK, class NV> struct Node
@@ -61,9 +63,9 @@ namespace orcache
 
 		typedef Node<K, V> CNode;
 	public:
-		ORCache(size_t capacity = 10000):_capacity(capacity)
+		ORCache(size_t capacity = 10):_capacity(capacity)
 		{
-            if(_capacity < 1000) _capacity = 1000;//限制最小容量
+            if(_capacity < 10) _capacity = 1000;//限制最小容量
 
 			_map = new std::map<K, CNode*>();	
 			_ghead = new CNode();
@@ -85,46 +87,44 @@ namespace orcache
 
 		ORCacheRetCode set(const K& key, const V& value)
 		{
-			typename std::map<K, CNode*>::iterator it = _map.find(key);			
-			if(it != _map.end()) return ORCacheRetCode_Exit; 
+			ORCacheRetCode ret = ORCacheRetCode_Succ;
+			typename std::map<K, CNode*>::iterator it = _map->find(key);			
+			if(it != _map->end()) return ORCacheRetCode_Exit; 
 			else
 			{
-			    if(_map.size() == _capacity)
+			    if(_map->size() == _capacity)
                 { 
-                    CNode *tnode = gtail->gpre;
+                    CNode *tnode = _gtail->gpre;
                     remove_glist(tnode);
-                    map.erase(tnode->key);
+                    _map->erase(tnode->key);
                     delete(tnode);
-                    return CacheRetCode_Full;
+                    ret = ORCacheRetCode_Full;
                 }
-                else
-                {
-                    CNode* tnode = new CNode(key, value);
-                    add_ghead(tnode);
-                    _map.insert(std::map<K, CNode*>(key, tnode);
-                }
+				CNode* tnode = new CNode(key, value);
+				add_ghead(tnode);
+				_map->insert(std::pair<K, CNode*>(key, tnode));
 			}
-            return ORCacheRetCode_Succ;
+            return ret;
 		}
 
-		bool get(const K& key, V& value)
+		ORCacheRetCode get(const K& key, V& value)
 		{
-			typename std::map<K, CNode*>::iterator it = _map.find(key);
-			if(it == _map.end()) return false;
+			typename std::map<K, CNode*>::iterator it = _map->find(key);
+			if(it == _map->end()) return ORCacheRetCode_Non_Exit;
 			value = it->second->value;
             move_to_ghead(it->second);
-			return true;
+			return ORCacheRetCode_Succ;
 		}
 
 		void erase(const K& key)
 		{
-			typename std::map<K, CNode*>::iterator it = _map.find(key);
-			if(it != _map.end())
+			typename std::map<K, CNode*>::iterator it = _map->find(key);
+			if(it != _map->end())
 			{
-				remove_glist(it->second);
-				delete(it->second);
-				_map.erase(it);
-
+				CNode *tnode = it->second;
+				remove_glist(tnode);
+				_map->erase(it);
+				delete(tnode);
 			}
 		}
 
@@ -135,13 +135,8 @@ namespace orcache
             size_t num = 0;
             while(cnt > 0 && tnode != _ghead)
             {
-                _map.erase(tnode->key);
-                //remove_slist(tnode);
-                tnode = tonde->gpre;
-                if(tnode->gnext->dirty)
-                {
-                    //脏数据回写到数据库中
-                }
+                _map->erase(tnode->key);
+                tnode = tnode->gpre;
                 delete(tnode->gnext);
                 ++num;
             }
@@ -154,19 +149,28 @@ namespace orcache
 		{
 			CNode *tnode = _ghead->gnext;
 			CNode *tnnode;
+			_map->clear();
+			while(tnode != _gtail)
+			{
+				tnnode = tnode;
+				tnode = tnnode->gnext;
+				delete(tnnode);
+			}
+			_ghead->gnext = _gtail;
+			_gtail->gpre = _ghead;
+
+		}
+		void printall()
+		{
+			CNode *tnode = _ghead->gnext;
+			CNode *tnnode;
 			while(tnode != _gtail)
 			{
 				tnnode = tnode;
 				tnode = tnode->gnext;
-				delete(tnnode);
+				std::cout << tnnode->key << ":" << tnnode->value << "  ";
 			}
-			_map.clear();
-			//_shead->snext = _stail;
-			//_stail->spre = _shead;
-
-			_ghead->gnext = _gtail;
-			_gtail->gpre = _ghead;
-
+			std::cout << std::endl;
 		}
 
 		~ORCache()
@@ -182,8 +186,6 @@ namespace orcache
 			delete(_map);
 			delete(_ghead);
 			delete(_gtail);
-			//delete(_shead);
-			//delete(_stail);
 		}
 
 	private:
@@ -191,32 +193,6 @@ namespace orcache
 		{
 			return _map->find(key);
 		}
-        /*
-		inline void move_to_shead(CNode* cur)
-		{
-			if(cur == NULL || cur == _shead->snext) return;
-			cur->spre->snext = cur->snext;
-			cur->snext->spre = cur->spre;
-			cur->snext = _shead->snext;
-			_shead->snext->spre = cur;
-			_shead->snext = cur;
-			cur->spre = _shead;
-		}
-		inline void add_shead(CNode* cur)
-		{
-			if(cur == NULL) return;
-			cur->snext = _shead->snext;
-			_shead->snext->spre = cur;
-			_shead->snext = cur;
-			cur->spre = _shead;	
-		}
-		inline void remove_slist(CNode* cur)
-		{
-			if(cur == NULL) return;
-			cur->spre->snext = cur->snext;
-			cur->snext->spre = cur->spre;	
-		}
-        */
 		inline void move_to_ghead(CNode* cur)
 		{
 			if(cur == NULL || cur ==_ghead->gnext) return;
@@ -243,8 +219,7 @@ namespace orcache
 		}
 
 		std::map<K, CNode*> *_map;
-		CNode *_ghead, *_gtail;//set list
-		//CNode *_shead, *_stail;//get list
+		CNode *_ghead, *_gtail;//get list
 		size_t _capacity;
 	};
 
